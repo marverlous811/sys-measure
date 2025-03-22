@@ -71,12 +71,6 @@ fn fetch_cpu_load() -> std::io::Result<Vec<crate::data::SystemCpuLoad>> {
     }
 }
 
-#[test]
-fn test_fetch_cpu_load() {
-    let load = fetch_cpu_load().unwrap();
-    println!("{:?}", load);
-}
-
 impl Measurement for MeasurementImpl {
     fn new() -> Self {
         MeasurementImpl
@@ -90,6 +84,17 @@ impl Measurement for MeasurementImpl {
         Ok(crate::data::DelayedMeasurement::new(Box::new(
             fetch_cpu_load,
         )))
+    }
+
+    fn cpu_load_by_pid(
+        &self,
+        _pid: u32,
+    ) -> std::io::Result<crate::DelayedMeasurement<f64>> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn memory_by_pid(&self, _pid: u32) -> std::io::Result<(f64, f64)> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 
     fn memory(&self) -> std::io::Result<crate::SystemMemory> {
