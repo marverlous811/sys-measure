@@ -13,13 +13,16 @@ pub trait Measurement {
         &self,
     ) -> io::Result<DelayedMeasurement<SystemCpuLoad>> {
         let measurement = self.cpu_load()?;
-        Ok(DelayedMeasurement::new(Box::new(move || {
-            measurement.done().map(|ls| {
-                let mut it = ls.iter();
-                let first = it.next().unwrap().clone(); // has to be a variable, rust moves the iterator otherwise
-                it.fold(first, |acc, l| acc.avg_add(l))
-            })
-        })))
+        Ok(DelayedMeasurement::new(
+            Box::new(move || {
+                measurement.done().map(|ls| {
+                    let mut it = ls.iter();
+                    let first = it.next().unwrap().clone(); // has to be a variable, rust moves the iterator otherwise
+                    it.fold(first, |acc, l| acc.avg_add(l))
+                })
+            }),
+            Some(0),
+        ))
     }
 
     fn cpu_load_by_pid(
@@ -28,6 +31,6 @@ pub trait Measurement {
     ) -> std::io::Result<DelayedMeasurement<f64>>;
 
     fn memory(&self) -> std::io::Result<SystemMemory>;
-    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(f64, f64)>;
+    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(u64, u64)>;
     fn swap(&self) -> std::io::Result<SystemSwap>;
 }

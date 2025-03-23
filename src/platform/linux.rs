@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io, mem, str, thread::sleep, time::Duration};
+use std::{collections::BTreeMap, io, mem, str};
 
 use bytesize::ByteSize;
 use libc::sysinfo;
@@ -211,6 +211,147 @@ DirectMap1G:    13631488 kB
     );
 }
 
+fn get_process_cpu_time(input: &str) -> io::Result<(u64, u64)> {
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    if parts.len() > 22 {
+        let utime: u64 = parts[13]
+            .parse()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?; // User mode time
+        let stime: u64 = parts[14]
+            .parse()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?; // Kernel mode time
+        return Ok((utime, stime));
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "Invalid stat line",
+    ))
+}
+
+fn proc_cpu_time(pid: u32) -> io::Result<(u64, u64)> {
+    read_file(format!("/proc/{pid}/stat").as_str())
+        .and_then(|op| get_process_cpu_time(&op))
+}
+
+#[test]
+fn test_process_cpu_time() {
+    let input = "17263 (node) S 909 632 632 0 -1 4194304 609356 221020 1 0 4204 707 174 207 20 0 13 0 2637531 23598481408 62734 18446744073709551615 12062720 41943537 140724753557216 0 0 0 0 16781312 83458 0 0 0 17 2 0 0 0 0 0 90033704 90170560 425885696 140724753558276 140724753558444 140724753558444 140724753559514 0";
+    let result = get_process_cpu_time(input).unwrap();
+    assert_eq!(result.0, 4204);
+    assert_eq!(result.1, 707)
+}
+
+fn get_process_status(input: &str) -> io::Result<(u64, u64)> {
+    let mut vm_size = 0;
+    let mut vm_rss = 0;
+
+    for line in input.lines() {
+        if line.starts_with("VmSize:") {
+            vm_size = line
+                .split_whitespace()
+                .nth(1)
+                .map_or_else(
+                    || {
+                        Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "vm_size line not found",
+                        ))
+                    },
+                    |d| Ok(d),
+                )?
+                .parse()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        } else if line.starts_with("VmRSS:") {
+            vm_rss = line
+                .split_whitespace()
+                .nth(1)
+                .map_or_else(
+                    || {
+                        Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "vm_rss line not found",
+                        ))
+                    },
+                    |d| Ok(d),
+                )?
+                .parse()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        }
+    }
+    return Ok((vm_size, vm_rss));
+}
+
+fn proc_memory(pid: u32) -> io::Result<(u64, u64)> {
+    read_file(format!("/proc/{pid}/status").as_str())
+        .and_then(|op| get_process_status(&op))
+}
+
+#[test]
+fn test_get_process_status() {
+    let input = "Name:   node
+Umask:  0022
+State:  S (sleeping)
+Tgid:   17263
+Ngid:   0
+Pid:    17263
+PPid:   909
+TracerPid:      0
+Uid:    0       0       0       0
+Gid:    0       0       0       0
+FDSize: 64
+Groups:  
+NStgid: 17263
+NSpid:  17263
+NSpgid: 632
+NSsid:  632
+VmPeak: 23063084 kB
+VmSize: 23041424 kB
+VmLck:         0 kB
+VmPin:         0 kB
+VmHWM:    267636 kB
+VmRSS:    253928 kB
+RssAnon:          199140 kB
+RssFile:           54788 kB
+RssShmem:              0 kB
+VmData:   300588 kB
+VmStk:       992 kB
+VmExe:     29184 kB
+VmLib:      5308 kB
+VmPTE:      4808 kB
+VmSwap:        0 kB
+HugetlbPages:          0 kB
+CoreDumping:    0
+THP_enabled:    1
+Threads:        13
+SigQ:   0/31592
+SigPnd: 0000000000000000
+ShdPnd: 0000000000000000
+SigBlk: 0000000000000000
+SigIgn: 0000000001001000
+SigCgt: 0000000100014602
+CapInh: 0000000000000000
+CapPrm: 000001ffffffffff
+CapEff: 000001ffffffffff
+CapBnd: 000001ffffffffff
+CapAmb: 0000000000000000
+NoNewPrivs:     0
+Seccomp:        0
+Seccomp_filters:        0
+Speculation_Store_Bypass:       vulnerable
+SpeculationIndirectBranch:      always enabled
+Cpus_allowed:   f
+Cpus_allowed_list:      0-3
+Mems_allowed:   00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:      0
+voluntary_ctxt_switches:        709093
+nonvoluntary_ctxt_switches:     109016";
+
+    let res = get_process_status(input).unwrap();
+    assert_eq!(res.0, 23041424);
+    assert_eq!(res.1, 253928);
+}
+
 impl Measurement for MeasurementImpl {
     fn new() -> Self {
         MeasurementImpl
@@ -220,16 +361,18 @@ impl Measurement for MeasurementImpl {
         &self,
     ) -> std::io::Result<DelayedMeasurement<Vec<SystemCpuLoad>>> {
         cpu_time().map(|times| {
-            sleep(Duration::from_secs(1));
-            DelayedMeasurement::new(Box::new(move || {
-                cpu_time().map(|delay_times| {
-                    delay_times
-                        .iter()
-                        .zip(times.iter())
-                        .map(|(now, prev)| (*now - prev).into())
-                        .collect::<Vec<_>>()
-                })
-            }))
+            DelayedMeasurement::new(
+                Box::new(move || {
+                    cpu_time().map(|delay_times| {
+                        delay_times
+                            .iter()
+                            .zip(times.iter())
+                            .map(|(now, prev)| (*now - prev).into())
+                            .collect::<Vec<_>>()
+                    })
+                }),
+                None,
+            )
         })
     }
 
@@ -237,15 +380,35 @@ impl Measurement for MeasurementImpl {
         &self,
         pid: u32,
     ) -> std::io::Result<DelayedMeasurement<f64>> {
-        todo!()
+        let total_core = cpu_time().iter().len();
+        let clock_ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
+        proc_cpu_time(pid).map(|(utime, stime)| {
+            DelayedMeasurement::new(
+                Box::new(move || {
+                    proc_cpu_time(pid).map(|(delayed_utime, delayed_stime)| {
+                        println!("before: {utime} {stime}");
+                        println!("afeter: {delayed_utime} {delayed_stime}");
+
+                        let used_time = delayed_utime
+                            .saturating_sub(utime)
+                            .saturating_add(delayed_stime.saturating_sub(stime))
+                            as f64
+                            / clock_ticks;
+                        // default delay measure is 1 sec
+                        (used_time * 100.0f64) / total_core as f64
+                    })
+                }),
+                None,
+            )
+        })
     }
 
     fn memory(&self) -> std::io::Result<SystemMemory> {
         PlatformMemory::new().map(PlatformMemory::to_memory)
     }
 
-    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(f64, f64)> {
-        todo!()
+    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(u64, u64)> {
+        proc_memory(pid)
     }
 
     fn swap(&self) -> std::io::Result<SystemSwap> {

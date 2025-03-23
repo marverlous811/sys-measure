@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, thread::sleep, time::Duration};
 
 pub mod cpu;
 pub mod memory;
@@ -16,16 +16,25 @@ type DelayedCallback<T> = Box<dyn Fn() -> io::Result<T> + Send>;
 
 pub struct DelayedMeasurement<T> {
     res: DelayedCallback<T>,
+    duration: Duration,
 }
 
 impl<T> DelayedMeasurement<T> {
     #[inline(always)]
-    pub fn new(f: DelayedCallback<T>) -> DelayedMeasurement<T> {
-        DelayedMeasurement { res: f }
+    pub fn new(
+        f: DelayedCallback<T>,
+        duration_sec: Option<u64>,
+    ) -> DelayedMeasurement<T> {
+        let sec = duration_sec.map_or_else(|| 1, |s| s);
+        DelayedMeasurement {
+            res: f,
+            duration: Duration::from_secs(sec),
+        }
     }
 
     #[inline(always)]
     pub fn done(&self) -> io::Result<T> {
+        sleep(self.duration);
         (self.res)()
     }
 }
