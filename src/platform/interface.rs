@@ -1,3 +1,5 @@
+use std::io;
+
 use crate::data::*;
 
 pub trait Measurement {
@@ -6,6 +8,19 @@ pub trait Measurement {
     fn cpu_load(
         &self,
     ) -> std::io::Result<DelayedMeasurement<Vec<SystemCpuLoad>>>;
+
+    fn cpu_load_aggregate(
+        &self,
+    ) -> io::Result<DelayedMeasurement<SystemCpuLoad>> {
+        let measurement = self.cpu_load()?;
+        Ok(DelayedMeasurement::new(Box::new(move || {
+            measurement.done().map(|ls| {
+                let mut it = ls.iter();
+                let first = it.next().unwrap().clone(); // has to be a variable, rust moves the iterator otherwise
+                it.fold(first, |acc, l| acc.avg_add(l))
+            })
+        })))
+    }
 
     fn cpu_load_by_pid(
         &self,

@@ -24,7 +24,7 @@ pub use std::collections::BTreeMap;
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 pub struct PlatformMemory {
-    pub meminfo: BTreeMap<String, u64>,
+    pub meminfo: BTreeMap<String, ByteSize>,
 }
 
 #[derive(Debug, Clone)]

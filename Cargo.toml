@@ -8,6 +8,8 @@ log = "0.4"
 libc = "0.2"
 bytesize = "1.3"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+nom = "8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mach2 = "0.4"
