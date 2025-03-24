@@ -85,8 +85,22 @@ impl SystemCpuLoad {
 }
 
 #[cfg(not(target_os = "linux"))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PlatformCpuLoad {}
+
+impl PlatformCpuLoad {
+    #[cfg(not(target_os = "linux"))]
+    #[inline(always)]
+    pub fn avg_add(self, _rhs: &Self) -> Self {
+        self
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[inline(always)]
+    pub fn from(_input: f32) -> Self {
+        PlatformCpuLoad {}
+    }
+}
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Default)]

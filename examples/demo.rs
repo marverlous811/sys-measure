@@ -36,8 +36,8 @@ fn main() {
             .memory_by_pid(pid)
             .expect("must collectable memory stats from pid");
 
-        println!("  Virtual Memory: {} KB", vm_size);
-        println!("  Resident Set Size (RSS): {} KB", vm_rss);
+        println!("Virtual Memory: {} KB", vm_size);
+        println!("Resident Set Size (RSS): {} KB", vm_rss);
 
         sleep(Duration::from_secs(10));
     }

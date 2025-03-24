@@ -81,9 +81,10 @@ impl Measurement for MeasurementImpl {
     ) -> std::io::Result<
         crate::data::DelayedMeasurement<Vec<crate::data::SystemCpuLoad>>,
     > {
-        Ok(crate::data::DelayedMeasurement::new(Box::new(
-            fetch_cpu_load,
-        )))
+        Ok(crate::data::DelayedMeasurement::new(
+            Box::new(fetch_cpu_load),
+            None,
+        ))
     }
 
     fn cpu_load_by_pid(
