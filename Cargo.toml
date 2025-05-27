@@ -2,6 +2,8 @@
 name = "sys-measure"
 version = "0.1.0"
 edition = "2021"
+description = "system measurement library for Rust"
+license = "MIT"
 
 [dependencies]
 log = "0.4"
