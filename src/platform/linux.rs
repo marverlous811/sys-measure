@@ -1,9 +1,12 @@
-use std::{collections::BTreeMap, io, mem, str};
+use std::{collections::BTreeMap, io, mem, path, str, time::Duration};
 
 use bytesize::ByteSize;
-use libc::sysinfo;
+use libc::{statvfs, sysinfo};
 use nom::{
-    bytes::complete::{tag, take_until},
+    bytes::{
+        complete::{tag, take_until},
+        take_till,
+    },
     character::complete::{digit1, multispace0, not_line_ending, space1},
     combinator::{complete, map, map_res, opt, verify},
     error::ParseError,
@@ -11,12 +14,29 @@ use nom::{
     sequence::{delimited, preceded},
     IResult, Parser,
 };
+use time::OffsetDateTime;
 
 use crate::{
-    helper::read_file, saturating_sub_bytes, DelayedMeasurement, Measurement,
-    PlatformMemory, SystemCpuLoad, SystemCpuTime, SystemMemory, SystemSwap,
+    disk::FileSystem,
+    helper::read_file,
+    network::{Network, NetworkStats, SocketStats},
+    platform::unix,
+    saturating_sub_bytes, DelayedMeasurement, Measurement, PlatformMemory,
+    SystemCpuLoad, SystemCpuTime, SystemMemory, SystemSwap,
 };
 pub struct MeasurementImpl;
+
+fn value_from_file<T: str::FromStr>(path: &str) -> io::Result<T> {
+    read_file(path)?
+        .trim_end_matches('\n')
+        .parse()
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("File: \"{}\" doesn't contain an int value", &path),
+            )
+        })
+}
 
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
 /// trailing whitespace, returning the output of `inner`.
@@ -27,6 +47,11 @@ where
     F: Parser<&'a str, Output = O, Error = E>,
 {
     delimited(multispace0, inner, multispace0)
+}
+
+#[inline]
+pub fn is_space(chr: u8) -> bool {
+    chr == b' ' || chr == b'\t'
 }
 
 fn proc_stat_cpu_prefix(input: &str) -> IResult<&str, ()> {
@@ -43,6 +68,10 @@ fn num<T: str::FromStr>(input: &str) -> IResult<&str, T> {
         str::FromStr::from_str,
     )
     .parse(input)
+}
+
+fn word_s(input: &str) -> IResult<&str, &str> {
+    take_till(|c| is_space(c as u8)).parse(input)
 }
 
 fn proc_stat_cpu_time(input: &str) -> IResult<&str, SystemCpuTime> {
@@ -352,6 +381,145 @@ nonvoluntary_ctxt_switches:     109016";
     assert_eq!(res.1, 253928);
 }
 
+struct ProcMountsData {
+    source: String,
+    target: String,
+    fstype: String,
+}
+
+fn proc_mounts_line(input: &str) -> IResult<&str, ProcMountsData> {
+    map(
+        (ws(word_s), ws(word_s), ws(word_s)),
+        |(source, target, fstype)| ProcMountsData {
+            source: source.to_string(),
+            target: target.to_string(),
+            fstype: fstype.to_string(),
+        },
+    )
+    .parse(input)
+}
+
+fn proc_mounts(input: &str) -> IResult<&str, Vec<ProcMountsData>> {
+    many1(map_res(ws(not_line_ending), |input| {
+        if input.is_empty() {
+            Err(())
+        } else {
+            proc_mounts_line(input).map(|(_, res)| res).map_err(|_| ())
+        }
+    }))
+    .parse(input)
+}
+
+#[test]
+fn test_proc_mounts() {
+    let test_input_1 = r#"/dev/md0 / btrfs rw,noatime,space_cache,subvolid=15192,subvol=/var/lib/docker/btrfs/subvolumes/df6eb8d3ce1a295bcc252e51ba086cb7705a046a79a342b74729f3f738129f04 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /dev tmpfs rw,nosuid,size=65536k,mode=755,inode64 0 0
+devpts /dev/pts devpts rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=666 0 0
+sysfs /sys sysfs ro,nosuid,nodev,noexec,relatime 0 0
+tmpfs /sys/fs/cgroup tmpfs rw,nosuid,nodev,noexec,relatime,mode=755,inode64 0 0"#;
+    let mounts = proc_mounts(test_input_1).unwrap().1;
+    assert!(mounts.len() == 6);
+    let root = mounts.iter().find(|m| m.target == "/").unwrap();
+    assert!(root.source == "/dev/md0");
+    assert!(root.target == "/");
+    assert!(root.fstype == "btrfs");
+}
+
+struct ProcNetSockStat {
+    tcp_in_use: usize,
+    tcp_orphaned: usize,
+    udp_in_use: usize,
+}
+
+fn proc_net_sockstat(input: &str) -> IResult<&str, ProcNetSockStat> {
+    map(
+        preceded(
+            not_line_ending,
+            (
+                preceded(ws(tag("TCP: inuse")), num),
+                delimited(ws(tag("orphan")), num, not_line_ending),
+                preceded(ws(tag("UDP: inuse")), num),
+            ),
+        ),
+        |(tcp_in_use, tcp_orphaned, udp_in_use)| ProcNetSockStat {
+            tcp_in_use,
+            tcp_orphaned,
+            udp_in_use,
+        },
+    )
+    .parse(input)
+}
+
+fn stat_mount(mount: ProcMountsData) -> io::Result<FileSystem> {
+    let mut info = unsafe { mem::zeroed::<libc::statvfs>() };
+    let target = format!("{}\0", mount.target);
+    let result = unsafe { statvfs(target.as_ptr() as *const i8, &mut info) };
+    match result {
+        0 => Ok(FileSystem {
+            files: (info.f_files as usize)
+                .saturating_sub(info.f_ffree as usize),
+            files_total: info.f_files as usize,
+            files_avail: info.f_favail as usize,
+            free: ByteSize::b(info.f_bfree as u64 * info.f_bsize as u64),
+            avail: ByteSize::b(info.f_bavail as u64 * info.f_bsize as u64),
+            total: ByteSize::b(info.f_blocks as u64 * info.f_bsize as u64),
+            name_max: info.f_namemax as usize,
+            fs_type: mount.fstype,
+            fs_mounted_from: mount.source,
+            fs_mounted_on: mount.target,
+        }),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
+
+#[test]
+fn test_proc_net_sockstat() {
+    let input = "sockets: used 925
+TCP: inuse 20 orphan 0 tw 12 alloc 23 mem 2
+UDP: inuse 1 mem 2
+UDPLITE: inuse 0
+RAW: inuse 0
+FRAG: inuse 0 memory 0
+";
+    let result = proc_net_sockstat(input).unwrap().1;
+    assert_eq!(result.tcp_in_use, 20);
+    assert_eq!(result.tcp_orphaned, 0);
+    assert_eq!(result.udp_in_use, 1);
+}
+
+struct ProcNetSockStat6 {
+    tcp_in_use: usize,
+    udp_in_use: usize,
+}
+
+fn proc_net_sockstat6(input: &str) -> IResult<&str, ProcNetSockStat6> {
+    map(
+        ws((
+            preceded(ws(tag("TCP6: inuse")), num),
+            preceded(ws(tag("UDP6: inuse")), num),
+        )),
+        |(tcp_in_use, udp_in_use)| ProcNetSockStat6 {
+            tcp_in_use,
+            udp_in_use,
+        },
+    )
+    .parse(input)
+}
+
+#[test]
+fn test_proc_net_sockstat6() {
+    let input = "TCP6: inuse 3
+UDP6: inuse 1
+UDPLITE6: inuse 0
+RAW6: inuse 1
+FRAG6: inuse 0 memory 0
+";
+    let result = proc_net_sockstat6(input).unwrap().1;
+    assert_eq!(result.tcp_in_use, 3);
+    assert_eq!(result.udp_in_use, 1);
+}
+
 impl Measurement for MeasurementImpl {
     fn new() -> Self {
         MeasurementImpl
@@ -386,8 +554,8 @@ impl Measurement for MeasurementImpl {
             DelayedMeasurement::new(
                 Box::new(move || {
                     proc_cpu_time(pid).map(|(delayed_utime, delayed_stime)| {
-                        println!("before: {utime} {stime}");
-                        println!("afeter: {delayed_utime} {delayed_stime}");
+                        log::debug!("before: {utime} {stime}");
+                        log::debug!("after: {delayed_utime} {delayed_stime}");
 
                         let used_time = delayed_utime
                             .saturating_sub(utime)
@@ -413,6 +581,158 @@ impl Measurement for MeasurementImpl {
 
     fn swap(&self) -> std::io::Result<SystemSwap> {
         PlatformMemory::new().map(PlatformMemory::to_swap)
+    }
+
+    fn mounts(&self) -> io::Result<Vec<FileSystem>> {
+        read_file("/proc/mounts")
+            .and_then(|data| {
+                proc_mounts(&data).map(|(_, mounts)| mounts).map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+                })
+            })
+            .and_then(|mounts| {
+                let res = mounts
+                    .into_iter()
+                    .filter_map(|mount| stat_mount(mount).ok())
+                    .collect::<Vec<_>>();
+                Ok(res)
+            })
+    }
+
+    fn mount_at<P: AsRef<path::Path>>(
+        &self,
+        path: P,
+    ) -> io::Result<FileSystem> {
+        read_file("/proc/mounts")
+            .and_then(|data| {
+                proc_mounts(&data).map(|(_, res)| res).map_err(|err| {
+                    io::Error::new(io::ErrorKind::InvalidData, err.to_string())
+                })
+            })
+            .and_then(|mounts| {
+                mounts
+                    .into_iter()
+                    .find(|mount| path::Path::new(&mount.target) == path.as_ref())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::NotFound, "No such mount")
+                    })
+            })
+            .and_then(stat_mount)
+    }
+
+    fn networks(&self) -> io::Result<BTreeMap<String, Network>> {
+        unix::networks()
+    }
+
+    fn network_stats(&self, interface: &str) -> io::Result<NetworkStats> {
+        let path_root: String =
+            ("/sys/class/net/".to_string() + interface) + "/statistics/";
+        let stats_file = |file: &str| (&path_root).to_string() + file;
+
+        let rx_bytes: u64 = value_from_file::<u64>(&stats_file("rx_bytes"))?;
+        let tx_bytes: u64 = value_from_file::<u64>(&stats_file("tx_bytes"))?;
+        let rx_packets: u64 =
+            value_from_file::<u64>(&stats_file("rx_packets"))?;
+        let tx_packets: u64 =
+            value_from_file::<u64>(&stats_file("tx_packets"))?;
+        let rx_errors: u64 = value_from_file::<u64>(&stats_file("rx_errors"))?;
+        let tx_errors: u64 = value_from_file::<u64>(&stats_file("tx_errors"))?;
+
+        Ok(NetworkStats {
+            rx_bytes: ByteSize::b(rx_bytes),
+            tx_bytes: ByteSize::b(tx_bytes),
+            rx_packets,
+            tx_packets,
+            rx_errors,
+            tx_errors,
+        })
+    }
+
+    fn socket_stats(&self) -> io::Result<SocketStats> {
+        let sockstats = read_file("/proc/net/sockstat").and_then(|data| {
+            proc_net_sockstat(&data).map(|(_, res)| res).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+            })
+        })?;
+        let sockstats6 = read_file("/proc/net/sockstat6").and_then(|data| {
+            proc_net_sockstat6(&data).map(|(_, res)| res).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+            })
+        })?;
+
+        Ok(SocketStats {
+            tcp_sockets_in_use: sockstats.tcp_in_use,
+            tcp_sockets_orphan: sockstats.tcp_orphaned,
+            udp_sockets_in_use: sockstats.udp_in_use,
+            tcp6_sockets_in_use: sockstats6.tcp_in_use,
+            udp6_sockets_in_use: sockstats6.udp_in_use,
+        })
+    }
+
+    fn boot_time(&self) -> io::Result<time::OffsetDateTime> {
+        read_file("/proc/stat").and_then(|data| {
+            data.lines()
+                .find(|line| line.starts_with("btime "))
+                .ok_or(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "btime not found in /proc/stat",
+                ))
+                .and_then(|line| {
+                    let timestamp_str = line
+                        .strip_prefix("btime ")
+                        .expect("line starts with btime");
+                    timestamp_str
+                        .parse::<i64>()
+                        .map_err(|err| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                err.to_string(),
+                            )
+                        })
+                        .and_then(|ts| {
+                            OffsetDateTime::from_unix_timestamp(ts).map_err(
+                                |err| {
+                                    io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        err.to_string(),
+                                    )
+                                },
+                            )
+                        })
+                })
+        })
+    }
+
+    fn process_uptime(&self, pid: u32) -> io::Result<std::time::Duration> {
+        let uptime_content = read_file("/proc/uptime")?;
+        let system_uptime_secs: f64 = uptime_content
+            .split_whitespace()
+            .next()
+            .ok_or(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid /proc/uptime format",
+            ))?
+            .parse()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let process_stat = read_file(format!("/proc/{}/stat", pid).as_str())?;
+        let parts: Vec<&str> = process_stat.split_whitespace().collect();
+        let start_time_ticks: u64 = parts
+            .get(21)
+            .ok_or(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid /proc/[pid]/stat format",
+            ))?
+            .parse()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let clock_ticks_per_second =
+            unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
+
+        let process_start_time_secs =
+            start_time_ticks as f64 / clock_ticks_per_second;
+        let process_uptime_secs = system_uptime_secs - process_start_time_secs;
+        Ok(Duration::from_secs_f64(process_uptime_secs.max(0.0)))
     }
 }
 

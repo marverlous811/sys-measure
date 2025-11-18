@@ -10,7 +10,8 @@ use libc::{
 use mach2::traps::mach_task_self;
 
 use crate::{
-    data::SystemCpuLoad, PlatformMemory, PlatformSwap, SystemMemory, SystemSwap,
+    data::SystemCpuLoad, network::Network, platform::unix, NetworkStats,
+    PlatformMemory, PlatformSwap, SystemMemory, SystemSwap,
 };
 
 use super::interface::Measurement;
@@ -178,6 +179,14 @@ impl Measurement for MeasurementImpl {
             }
             _ => return Err(io::Error::last_os_error()),
         }
+    }
+
+    fn networks(&self) -> io::Result<BTreeMap<String, Network>> {
+        unix::networks()
+    }
+
+    fn network_stats(&self, interface: &str) -> io::Result<NetworkStats> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }
 
