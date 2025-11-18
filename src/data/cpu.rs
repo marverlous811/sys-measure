@@ -15,7 +15,7 @@ impl<'a> Sub<&'a SystemCpuTime> for SystemCpuTime {
 
     #[inline(always)]
     fn sub(self, rhs: &SystemCpuTime) -> SystemCpuTime {
-        println!("left: {:?} - right: {:?}", self, rhs);
+        log::debug!("left: {:?} - right: {:?}", self, rhs);
         SystemCpuTime {
             user: self.user.saturating_sub(rhs.user),
             nice: self.nice.saturating_sub(rhs.nice),

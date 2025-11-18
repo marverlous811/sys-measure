@@ -1,6 +1,6 @@
 use std::{process, thread::sleep, time::Duration};
 
-use sys_measure::{Measurement, PlatformMeasurement};
+use sys_measure::{cpu, Measurement, PlatformMeasurement};
 use tracing_subscriber::{
     layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
 };
@@ -27,7 +27,7 @@ fn fetch_process_info(
 fn main() {
     if std::env::var_os("RUST_LOG").is_none() {
         unsafe {
-            std::env::set_var("RUST_LOG", "debug");
+            std::env::set_var("RUST_LOG", "info");
         }
     }
 
@@ -45,6 +45,21 @@ fn main() {
     loop {
         // let _ = fetch_process_info(&measuare, pid);
         let _ = fetch_process_info(&measuare, cur);
+        let cpu_load = measuare.cpu_load_aggregate().unwrap();
+        let done = cpu_load.done().unwrap();
+        // let total_cpu = done.user + done.system + done.nice + done.idle;
+        let usage = (1.0 - (done.idle)) * 100.0;
+        log::info!("Aggregate CPU Usage: {:.2}%", usage);
+
+        let memory = measuare.memory().unwrap();
+
+        log::info!(
+            "Memory - Total: {}, Free: {}, Used: {}",
+            memory.total,
+            memory.free,
+            memory.used
+        );
+        log::info!("==================================================================");
 
         sleep(Duration::from_secs(10));
     }

@@ -612,7 +612,9 @@ impl Measurement for MeasurementImpl {
             .and_then(|mounts| {
                 mounts
                     .into_iter()
-                    .find(|mount| path::Path::new(&mount.target) == path.as_ref())
+                    .find(|mount| {
+                        path::Path::new(&mount.target) == path.as_ref()
+                    })
                     .ok_or_else(|| {
                         io::Error::new(io::ErrorKind::NotFound, "No such mount")
                     })
@@ -777,15 +779,12 @@ impl PlatformMemory {
         let meminfo = &self.meminfo;
         SystemMemory {
             total: meminfo.get("MemTotal").copied().unwrap_or(ByteSize::b(0)),
-            free: saturating_sub_bytes(
+            free: meminfo.get("MemFree").copied().unwrap_or(ByteSize::b(0)),
+            used: saturating_sub_bytes(
+                meminfo.get("MemTotal").copied().unwrap_or(ByteSize::b(0)),
                 meminfo.get("MemFree").copied().unwrap_or(ByteSize::b(0))
                     + meminfo.get("Buffers").copied().unwrap_or(ByteSize::b(0))
-                    + meminfo.get("Cached").copied().unwrap_or(ByteSize::b(0))
-                    + meminfo
-                        .get("SReclaimable")
-                        .copied()
-                        .unwrap_or(ByteSize::b(0)),
-                meminfo.get("Shmem").copied().unwrap_or(ByteSize::b(0)),
+                    + meminfo.get("Cached").copied().unwrap_or(ByteSize::b(0)),
             ),
             platform: self,
         }

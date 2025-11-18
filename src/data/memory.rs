@@ -4,6 +4,7 @@ use bytesize::ByteSize;
 pub struct SystemMemory {
     pub total: ByteSize,
     pub free: ByteSize,
+    pub used: ByteSize,
     pub platform: PlatformMemory,
 }
 

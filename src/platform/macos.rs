@@ -143,6 +143,7 @@ impl Measurement for MeasurementImpl {
                 Ok(SystemMemory {
                     total: pmem.total,
                     free: pmem.free,
+                    used: pmem.active + pmem.wired,
                     platform: pmem,
                 })
             }
