@@ -47,8 +47,8 @@ fn main() {
         let _ = fetch_process_info(&measuare, cur);
         let cpu_load = measuare.cpu_load_aggregate().unwrap();
         let done = cpu_load.done().unwrap();
-        // let total_cpu = done.user + done.system + done.nice + done.idle;
-        let usage = (1.0 - (done.idle)) * 100.0;
+        let total_cpu = done.user + done.system + done.nice + done.idle;
+        let usage = (1.0 - (done.idle / total_cpu)) * 100.0;
         log::info!("Aggregate CPU Usage: {:.2}%", usage);
 
         let memory = measuare.memory().unwrap();
