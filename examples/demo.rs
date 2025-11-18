@@ -37,13 +37,13 @@ fn main() {
         .init();
 
     let measuare = PlatformMeasurement::new();
-    let pid = 2403002;
+    // let pid = 2403002;
     let cur = process::id();
 
     log::info!("Current process ID: {cur}");
 
     loop {
-        let _ = fetch_process_info(&measuare, pid);
+        // let _ = fetch_process_info(&measuare, pid);
         let _ = fetch_process_info(&measuare, cur);
 
         sleep(Duration::from_secs(10));

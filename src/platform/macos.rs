@@ -1,4 +1,4 @@
-use std::{io, mem, ptr};
+use std::{collections::BTreeMap, io, mem, ptr, time::Duration};
 
 use bytesize::ByteSize;
 use libc::{
@@ -10,7 +10,10 @@ use libc::{
 use mach2::traps::mach_task_self;
 
 use crate::{
-    data::SystemCpuLoad, network::Network, platform::unix, NetworkStats,
+    data::SystemCpuLoad,
+    disk::FileSystem,
+    network::{Network, NetworkStats, SocketStats},
+    platform::unix,
     PlatformMemory, PlatformSwap, SystemMemory, SystemSwap,
 };
 
@@ -186,6 +189,22 @@ impl Measurement for MeasurementImpl {
     }
 
     fn network_stats(&self, interface: &str) -> io::Result<NetworkStats> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn boot_time(&self) -> io::Result<time::OffsetDateTime> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn process_uptime(&self, _: u32) -> io::Result<Duration> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn mounts(&self) -> io::Result<Vec<FileSystem>> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn socket_stats(&self) -> io::Result<SocketStats> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }
