@@ -48,5 +48,8 @@ fn main() {
     let process_uptime = measuare.process_uptime(cur).unwrap();
     println!("Process uptime: {:?}\n", process_uptime);
 
+    let pid = measuare.process_pid("relay-agent").unwrap();
+    println!("Process pid for relay_agent: {:?}\n", pid);
+
     println!("Elapsed: {:?}\n", start.elapsed());
 }

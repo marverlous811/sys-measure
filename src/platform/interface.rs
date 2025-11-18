@@ -58,4 +58,5 @@ pub trait Measurement {
     fn socket_stats(&self) -> io::Result<SocketStats>;
     fn boot_time(&self) -> io::Result<OffsetDateTime>;
     fn process_uptime(&self, pid: u32) -> io::Result<Duration>;
+    fn process_pid(&self, cmd: &str) -> io::Result<Option<usize>>;
 }

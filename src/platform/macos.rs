@@ -208,6 +208,10 @@ impl Measurement for MeasurementImpl {
     fn socket_stats(&self) -> io::Result<SocketStats> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
+
+    fn process_pid(&self, _cmd: &str) -> io::Result<Option<usize>> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
 }
 
 #[cfg(test)]

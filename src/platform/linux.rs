@@ -736,6 +736,23 @@ impl Measurement for MeasurementImpl {
         let process_uptime_secs = system_uptime_secs - process_start_time_secs;
         Ok(Duration::from_secs_f64(process_uptime_secs.max(0.0)))
     }
+
+    fn process_pid(&self, cmd: &str) -> io::Result<Option<usize>> {
+        for entry in std::fs::read_dir("/proc")? {
+            let entry = entry?;
+            let pid_str = entry.file_name().to_string_lossy().to_string();
+            if let Ok(pid) = pid_str.parse::<usize>() {
+                let cmd_path = format!("/proc/{}/cmdline", pid);
+                if let Ok(cmdline) = read_file(&cmd_path) {
+                    if cmdline.contains(cmd) {
+                        return Ok(Some(pid));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 impl PlatformMemory {
