@@ -1,6 +1,6 @@
 use std::{process, thread::sleep, time::Duration};
 
-use sys_measure::{cpu, Measurement, PlatformMeasurement};
+use sys_measure::{Measurement, PlatformMeasurement};
 use tracing_subscriber::{
     layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
 };
@@ -24,6 +24,54 @@ fn fetch_process_info(
     Ok(())
 }
 
+fn fetch_exec_info(
+    measurement: &PlatformMeasurement,
+    cmd: &str,
+) -> anyhow::Result<()> {
+    let pids = measurement.process_pid(cmd)?;
+    if pids.is_empty() {
+        log::warn!("No process found for command: {cmd}");
+        log::info!("-----------------------------------");
+        return Ok(());
+    }
+
+    log::info!("Found PIDs for command '{cmd}': {:?}", pids);
+    let mut process_cpu_usage = 0f64;
+    let mut process_vm_size = 0u64;
+    let mut process_vm_rss = 0u64;
+    for pid in pids {
+        let pid_cpu_usage = measurement.cpu_load_by_pid(pid as u32)?;
+        match pid_cpu_usage.done() {
+            Ok(usage) => {
+                process_cpu_usage += usage;
+            }
+            Err(e) => {
+                log::error!("Failed to get CPU usage for pid {pid}: {}", e);
+                continue;
+            }
+        };
+
+        match measurement.memory_by_pid(pid as u32) {
+            Ok((vm_size, vm_rss)) => {
+                process_vm_size += vm_size;
+                process_vm_rss += vm_rss;
+            }
+            Err(e) => {
+                log::error!("Failed to get memory info for pid {pid}: {}", e);
+                continue;
+            }
+        };
+    }
+
+    log::info!("Command: {cmd}");
+    log::info!("Total CPU Usage: {:.2}%", process_cpu_usage);
+    log::info!("Total Virtual Memory: {} KB", process_vm_size);
+    log::info!("Total Resident Set Size (RSS): {} KB", process_vm_rss);
+    log::info!("-----------------------------------");
+
+    Ok(())
+}
+
 fn main() {
     if std::env::var_os("RUST_LOG").is_none() {
         unsafe {
@@ -37,13 +85,12 @@ fn main() {
         .init();
 
     let measuare = PlatformMeasurement::new();
-    // let pid = 2403002;
     let cur = process::id();
 
     log::info!("Current process ID: {cur}");
 
     loop {
-        // let _ = fetch_process_info(&measuare, pid);
+        let _ = fetch_exec_info(&measuare, "rustc");
         let _ = fetch_process_info(&measuare, cur);
         let cpu_load = measuare.cpu_load_aggregate().unwrap();
         let done = cpu_load.done().unwrap();

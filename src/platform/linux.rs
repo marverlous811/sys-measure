@@ -737,7 +737,8 @@ impl Measurement for MeasurementImpl {
         Ok(Duration::from_secs_f64(process_uptime_secs.max(0.0)))
     }
 
-    fn process_pid(&self, cmd: &str) -> io::Result<Option<usize>> {
+    fn process_pid(&self, cmd: &str) -> io::Result<Vec<usize>> {
+        let mut pids = Vec::new();
         for entry in std::fs::read_dir("/proc")? {
             let entry = entry?;
             let pid_str = entry.file_name().to_string_lossy().to_string();
@@ -745,13 +746,13 @@ impl Measurement for MeasurementImpl {
                 let cmd_path = format!("/proc/{}/cmdline", pid);
                 if let Ok(cmdline) = read_file(&cmd_path) {
                     if cmdline.contains(cmd) {
-                        return Ok(Some(pid));
+                        pids.push(pid);
                     }
                 }
             }
         }
 
-        Ok(None)
+        Ok(pids)
     }
 }
 

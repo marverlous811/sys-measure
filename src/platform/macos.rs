@@ -209,7 +209,7 @@ impl Measurement for MeasurementImpl {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 
-    fn process_pid(&self, _cmd: &str) -> io::Result<Option<usize>> {
+    fn process_pid(&self, _cmd: &str) -> io::Result<Vec<usize>> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }

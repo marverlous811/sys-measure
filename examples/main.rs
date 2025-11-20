@@ -1,4 +1,4 @@
-use sys_measure::{platform::unix, Measurement, PlatformMeasurement};
+use sys_measure::{Measurement, PlatformMeasurement};
 
 fn main() {
     println!("Hello, world!");
