@@ -21,10 +21,30 @@ use crate::{
     helper::read_file,
     network::{Network, NetworkStats, SocketStats},
     platform::unix,
+    process::ProcessStatus,
     saturating_sub_bytes, DelayedMeasurement, Measurement, PlatformMemory,
     SystemCpuLoad, SystemCpuTime, SystemMemory, SystemSwap,
 };
 pub struct MeasurementImpl;
+
+impl From<char> for ProcessStatus {
+    fn from(status: char) -> ProcessStatus {
+        match status {
+            'R' => ProcessStatus::Run,
+            'S' => ProcessStatus::Sleep,
+            'I' => ProcessStatus::Idle,
+            'D' => ProcessStatus::UninterruptibleDiskSleep,
+            'Z' => ProcessStatus::Zombie,
+            'T' => ProcessStatus::Stop,
+            't' => ProcessStatus::Tracing,
+            'X' | 'x' => ProcessStatus::Dead,
+            'K' => ProcessStatus::Wakekill,
+            'W' => ProcessStatus::Waking,
+            'P' => ProcessStatus::Parked,
+            x => ProcessStatus::Unknown(x as u32),
+        }
+    }
+}
 
 fn value_from_file<T: str::FromStr>(path: &str) -> io::Result<T> {
     read_file(path)?
@@ -271,12 +291,25 @@ fn test_process_cpu_time() {
     assert_eq!(result.1, 707)
 }
 
-fn get_process_status(input: &str) -> io::Result<(u64, u64)> {
+fn get_process_status(input: &str) -> io::Result<(u64, u64, ProcessStatus)> {
     let mut vm_size = 0;
     let mut vm_rss = 0;
+    let mut status = ProcessStatus::Unknown(0);
 
     for line in input.lines() {
-        if line.starts_with("VmSize:") {
+        if line.starts_with("State:") {
+            let status_char = line
+                .split_whitespace()
+                .nth(1)
+                .and_then(|s| s.chars().next())
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "State line not found",
+                    )
+                })?;
+            status = ProcessStatus::from(status_char);
+        } else if line.starts_with("VmSize:") {
             vm_size = line
                 .split_whitespace()
                 .nth(1)
@@ -308,10 +341,10 @@ fn get_process_status(input: &str) -> io::Result<(u64, u64)> {
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
     }
-    return Ok((vm_size, vm_rss));
+    return Ok((vm_size, vm_rss, status));
 }
 
-fn proc_memory(pid: u32) -> io::Result<(u64, u64)> {
+fn proc_memory(pid: u32) -> io::Result<(u64, u64, ProcessStatus)> {
     read_file(format!("/proc/{pid}/status").as_str())
         .and_then(|op| get_process_status(&op))
 }
@@ -379,6 +412,7 @@ nonvoluntary_ctxt_switches:     109016";
     let res = get_process_status(input).unwrap();
     assert_eq!(res.0, 23041424);
     assert_eq!(res.1, 253928);
+    assert_eq!(res.2, ProcessStatus::Sleep);
 }
 
 struct ProcMountsData {
@@ -575,7 +609,10 @@ impl Measurement for MeasurementImpl {
         PlatformMemory::new().map(PlatformMemory::to_memory)
     }
 
-    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(u64, u64)> {
+    fn memory_by_pid(
+        &self,
+        pid: u32,
+    ) -> std::io::Result<(u64, u64, ProcessStatus)> {
         proc_memory(pid)
     }
 

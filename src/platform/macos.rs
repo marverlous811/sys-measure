@@ -98,7 +98,10 @@ impl Measurement for MeasurementImpl {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 
-    fn memory_by_pid(&self, _pid: u32) -> std::io::Result<(u64, u64)> {
+    fn memory_by_pid(
+        &self,
+        _pid: u32,
+    ) -> std::io::Result<(u64, u64, crate::process::ProcessStatus)> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 
