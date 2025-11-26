@@ -22,7 +22,7 @@ impl fmt::Display for ProcessStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match *self {
             ProcessStatus::Idle => "Idle",
-            ProcessStatus::Run => "Runnable",
+            ProcessStatus::Run => "Running",
             ProcessStatus::Sleep => "Sleeping",
             ProcessStatus::Stop => "Stopped",
             ProcessStatus::Zombie => "Zombie",
