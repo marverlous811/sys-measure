@@ -2,7 +2,7 @@ use crate::{
     data::*,
     disk::FileSystem,
     network::{Network, NetworkStats, SocketStats},
-    process::{ProcessInfo, ProcessStatus},
+    process::ProcessInfo,
 };
 use std::{collections::BTreeMap, io, path, time::Duration};
 use time::OffsetDateTime;
@@ -36,10 +36,7 @@ pub trait Measurement {
     ) -> std::io::Result<DelayedMeasurement<f64>>;
 
     fn memory(&self) -> std::io::Result<SystemMemory>;
-    fn memory_by_pid(
-        &self,
-        pid: u32,
-    ) -> std::io::Result<(u64, u64, ProcessStatus)>;
+    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(u64, u64)>;
     fn swap(&self) -> std::io::Result<SystemSwap>;
     fn mounts(&self) -> io::Result<Vec<FileSystem>>;
     fn mount_at<P: AsRef<path::Path>>(

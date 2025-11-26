@@ -27,21 +27,21 @@ use crate::{
 };
 pub struct MeasurementImpl;
 
-impl From<char> for ProcessStatus {
-    fn from(status: char) -> ProcessStatus {
+impl From<&str> for ProcessStatus {
+    fn from(status: &str) -> ProcessStatus {
         match status {
-            'R' => ProcessStatus::Run,
-            'S' => ProcessStatus::Sleep,
-            'I' => ProcessStatus::Idle,
-            'D' => ProcessStatus::UninterruptibleDiskSleep,
-            'Z' => ProcessStatus::Zombie,
-            'T' => ProcessStatus::Stop,
-            't' => ProcessStatus::Tracing,
-            'X' | 'x' => ProcessStatus::Dead,
-            'K' => ProcessStatus::Wakekill,
-            'W' => ProcessStatus::Waking,
-            'P' => ProcessStatus::Parked,
-            x => ProcessStatus::Unknown(x as u32),
+            "R" => ProcessStatus::Run,
+            "S" => ProcessStatus::Sleep,
+            "I" => ProcessStatus::Idle,
+            "D" => ProcessStatus::UninterruptibleDiskSleep,
+            "Z" => ProcessStatus::Zombie,
+            "T" => ProcessStatus::Stop,
+            "t" => ProcessStatus::Tracing,
+            "X" | "x" => ProcessStatus::Dead,
+            "K" => ProcessStatus::Wakekill,
+            "W" => ProcessStatus::Waking,
+            "P" => ProcessStatus::Parked,
+            x => ProcessStatus::Unknown(x.parse().unwrap_or(0)),
         }
     }
 }
@@ -291,60 +291,68 @@ fn test_process_cpu_time() {
     assert_eq!(result.1, 707)
 }
 
-fn get_process_status(input: &str) -> io::Result<(u64, u64, ProcessStatus)> {
-    let mut vm_size = 0;
-    let mut vm_rss = 0;
-    let mut status = ProcessStatus::Unknown(0);
-
+fn get_process_status(input: &str) -> io::Result<ProcessInfo> {
+    let get_data_fn = |line: &str| -> io::Result<String> {
+        line.split_whitespace().nth(1).map_or_else(
+            || {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid line format",
+                ))
+            },
+            |d| Ok(d.to_string()),
+        )
+    };
+    let mut retval = ProcessInfo::default();
     for line in input.lines() {
-        if line.starts_with("State:") {
-            let status_char = line
-                .split_whitespace()
-                .nth(1)
-                .and_then(|s| s.chars().next())
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "State line not found",
-                    )
+        match line {
+            line if line.starts_with("State:") => {
+                let status_char = get_data_fn(line)?;
+                let status = ProcessStatus::from(status_char.as_str());
+                retval = retval.with_state(status);
+            }
+            line if line.starts_with("VmSize:") => {
+                let size_str = get_data_fn(line)?;
+                let vm_size = size_str.parse().map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, e)
                 })?;
-            status = ProcessStatus::from(status_char);
-        } else if line.starts_with("VmSize:") {
-            vm_size = line
-                .split_whitespace()
-                .nth(1)
-                .map_or_else(
-                    || {
-                        Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "vm_size line not found",
-                        ))
-                    },
-                    |d| Ok(d),
-                )?
-                .parse()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        } else if line.starts_with("VmRSS:") {
-            vm_rss = line
-                .split_whitespace()
-                .nth(1)
-                .map_or_else(
-                    || {
-                        Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "vm_rss line not found",
-                        ))
-                    },
-                    |d| Ok(d),
-                )?
-                .parse()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                retval = retval.with_vm_size(vm_size);
+            }
+            line if line.starts_with("VmRSS:") => {
+                let size_str = get_data_fn(line)?;
+                let vm_rss = size_str.parse().map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, e)
+                })?;
+                retval = retval.with_vm_rss(vm_rss);
+            }
+            line if line.starts_with("RssAnon:") => {
+                let size_str = get_data_fn(line)?;
+                let rss_anon = size_str.parse().map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, e)
+                })?;
+                retval = retval.with_rss_anon(rss_anon);
+            }
+            line if line.starts_with("RssFile:") => {
+                let size_str = get_data_fn(line)?;
+                let rss_file = size_str.parse().map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, e)
+                })?;
+                retval = retval.with_rss_file(rss_file);
+            }
+            line if line.starts_with("RssShmem:") => {
+                let size_str = get_data_fn(line)?;
+                let rss_shmem = size_str.parse().map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, e)
+                })?;
+                retval = retval.with_rss_shmem(rss_shmem);
+            }
+            _ => {}
         }
     }
-    return Ok((vm_size, vm_rss, status));
+    return Ok(retval);
 }
 
-fn proc_memory(pid: u32) -> io::Result<(u64, u64, ProcessStatus)> {
+fn proc_status(pid: u32) -> io::Result<ProcessInfo> {
     read_file(format!("/proc/{pid}/status").as_str())
         .and_then(|op| get_process_status(&op))
 }
@@ -410,9 +418,13 @@ voluntary_ctxt_switches:        709093
 nonvoluntary_ctxt_switches:     109016";
 
     let res = get_process_status(input).unwrap();
-    assert_eq!(res.0, 23041424);
-    assert_eq!(res.1, 253928);
-    assert_eq!(res.2, ProcessStatus::Sleep);
+
+    assert_eq!(res.vm_size, 23041424);
+    assert_eq!(res.vm_rss, 253928);
+    assert_eq!(res.state, ProcessStatus::Sleep);
+    assert_eq!(res.rss_anon, 199140);
+    assert_eq!(res.rss_file, 54788);
+    assert_eq!(res.rss_shmem, 0);
 }
 
 struct ProcMountsData {
@@ -460,26 +472,33 @@ tmpfs /sys/fs/cgroup tmpfs rw,nosuid,nodev,noexec,relatime,mode=755,inode64 0 0"
     assert!(root.fstype == "btrfs");
 }
 
+#[derive(Debug, Default)]
 struct ProcNetSockStat {
     tcp_in_use: usize,
     tcp_orphaned: usize,
+    tcp_time_wait: usize,
     udp_in_use: usize,
 }
 
+#[allow(dead_code)]
 fn proc_net_sockstat(input: &str) -> IResult<&str, ProcNetSockStat> {
     map(
         preceded(
             not_line_ending,
             (
                 preceded(ws(tag("TCP: inuse")), num),
-                delimited(ws(tag("orphan")), num, not_line_ending),
+                preceded(ws(tag("orphan")), num),
+                delimited(ws(tag("tw")), num, not_line_ending),
                 preceded(ws(tag("UDP: inuse")), num),
             ),
         ),
-        |(tcp_in_use, tcp_orphaned, udp_in_use)| ProcNetSockStat {
-            tcp_in_use,
-            tcp_orphaned,
-            udp_in_use,
+        |(tcp_in_use, tcp_orphaned, tcp_time_wait, udp_in_use)| {
+            ProcNetSockStat {
+                tcp_in_use,
+                tcp_orphaned,
+                tcp_time_wait,
+                udp_in_use,
+            }
         },
     )
     .parse(input)
@@ -517,8 +536,10 @@ RAW: inuse 0
 FRAG: inuse 0 memory 0
 ";
     let result = proc_net_sockstat(input).unwrap().1;
+    println!("{:?}", result);
     assert_eq!(result.tcp_in_use, 20);
     assert_eq!(result.tcp_orphaned, 0);
+    assert_eq!(result.tcp_time_wait, 12);
     assert_eq!(result.udp_in_use, 1);
 }
 
@@ -527,6 +548,7 @@ struct ProcNetSockStat6 {
     udp_in_use: usize,
 }
 
+#[allow(dead_code)]
 fn proc_net_sockstat6(input: &str) -> IResult<&str, ProcNetSockStat6> {
     map(
         ws((
@@ -552,6 +574,172 @@ FRAG6: inuse 0 memory 0
     let result = proc_net_sockstat6(input).unwrap().1;
     assert_eq!(result.tcp_in_use, 3);
     assert_eq!(result.udp_in_use, 1);
+}
+
+struct TcpSockStat {
+    in_use: usize,
+    orphaned: usize,
+    time_wait: usize,
+}
+
+impl Default for TcpSockStat {
+    fn default() -> Self {
+        TcpSockStat {
+            in_use: 0,
+            orphaned: 0,
+            time_wait: 0,
+        }
+    }
+}
+
+impl From<TcpSockStat> for ProcNetSockStat {
+    fn from(stat: TcpSockStat) -> Self {
+        ProcNetSockStat {
+            tcp_in_use: stat.in_use,
+            tcp_orphaned: stat.orphaned,
+            tcp_time_wait: stat.time_wait,
+            ..Default::default()
+        }
+    }
+}
+
+fn parse_tcp_state(line: &str) -> Option<u8> {
+    let parts = line.split_whitespace().collect::<Vec<&str>>();
+    if parts.len() < 4 {
+        return None;
+    }
+    u8::from_str_radix(parts[3], 16).ok()
+}
+
+fn tcp_sock_from_raw(content: &str) -> std::io::Result<TcpSockStat> {
+    let mut stat = TcpSockStat::default();
+    for line in content.lines().skip(1) {
+        if let Some(state) = parse_tcp_state(line) {
+            // stat.in_use += 1;
+            match state {
+                0x06 => stat.time_wait += 1, // TIME_WAIT
+                0x0B => stat.orphaned += 1,  // CLOSE_WAIT (as an example)
+                _ => {
+                    stat.in_use += 1;
+                }
+            }
+        }
+    }
+
+    Ok(stat)
+}
+
+#[test]
+fn test_tcp_sock_raw() {
+    let content = r#"sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     
+   0: 00000000:1392 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 21291 1 ffff967b6f8c2300 100 0 0 10 0                     
+   1: 3500007F:0035 00000000:0000 0A 00000000:00000000 00:00000000 00000000   101        0 22069 1 ffff967b68b8cec0 100 0 0 10 0                     
+   2: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 26714 1 ffff967b6f7571c0 100 0 0 10 0                     
+   3: 0100007F:4E20 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 90595452 1 ffff967944b6bd40 100 0 0 10 0                  
+   4: 00000000:1FA4 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 50557766 1 ffff967b6f69f1c0 100 0 0 10 0                  
+   5: 0100007F:9C45 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 96605041 1 ffff9679cd933d40 100 0 0 10 0                  
+   6: 0100007F:2710 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 381283 1 ffff967b69a73d40 100 0 0 10 0                    
+   7: 00000000:6DB0 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 30879 1 ffff967b68b8d780 100 0 0 10 0                     
+   8: 4F000A0A:E9E8 8FDE3967:8236 06 00000000:00000000 03:00000215 00000000     0        0 0 3 ffff967b6c31f740                                      
+   9: 4F000A0A:0016 01000A0A:D8E7 01 00000000:00000000 02:0006D744 00000000     0        0 96592557 2 ffff967b6f8c71c0 21 4 28 5 4                   
+  10: 4F000A0A:D168 1672528C:01BB 01 00000000:00000000 02:00000780 00000000  1000        0 96678604 2 ffff96796f0b0000 53 4 24 10 -1                 
+  11: 4F000A0A:0016 01000A0A:EC8F 01 00000024:00000000 01:00000014 00000000     0        0 96540557 4 ffff967b6f8c1180 21 4 31 7 7                   
+  12: 4F000A0A:A27A 4077FA14:01BB 01 00000000:00000000 02:00000439 00000000  1000        0 96622127 2 ffff96796f0b71c0 41 4 1 10 48                  
+  13: 4F000A0A:9532 4077FA14:01BB 01 00000000:00000000 02:0000075B 00000000  1000        0 96671498 2 ffff967a6e211180 40 4 25 13 -1                 
+  14: 4F000A0A:ACEA 8FDE3967:8236 06 00000000:00000000 03:00001478 00000000     0        0 0 3 ffff967a46fe22e8                                      
+  15: 0100007F:B87E 0100007F:9C45 01 00000000:00000000 00:00000000 00000000  1000        0 96620248 1 ffff9679cd934ec0 21 4 30 10 16                 
+  16: 0100007F:9C45 0100007F:B87E 01 00000000:00000000 00:00000000 00000000  1000        0 96620250 1 ffff967b6f752300 21 4 0 10 16                  
+  17: 0100007F:6DB0 0100007F:E14E 06 00000000:00000000 03:00000C5E 00000000     0        0 0 3 ffff967b2563bb20                                      
+  18: 0100007F:6DB0 0100007F:BD34 06 00000000:00000000 03:00000B89 00000000     0        0 0 3 ffff967b25639550                                      
+  19: 0100007F:6DB0 0100007F:E152 06 00000000:00000000 03:00000C61 00000000     0        0 0 3 ffff967b2563ad90                                      
+  20: 4F000A0A:B412 2916ED04:01BB 01 00000000:00000000 02:0000090E 00000000  1000        0 96625872 2 ffff967a6e213480 36 4 1 10 24                  
+  21: 4F000A0A:D43C 69825514:01BB 01 00000000:00000000 02:0000093F 00000000  1000        0 96682339 2 ffff9679cd939a40 55 4 12 14 -1"#;
+    let res = tcp_sock_from_raw(content).unwrap();
+    assert_eq!(res.in_use, 17);
+    assert_eq!(res.orphaned, 0);
+    assert_eq!(res.time_wait, 5);
+}
+
+fn udp_sock_from_raw(content: &str) -> std::io::Result<usize> {
+    let mut in_use = 0;
+    for line in content.lines().skip(1) {
+        let parts = line.split_whitespace().collect::<Vec<&str>>();
+        if parts.len() >= 4 {
+            in_use += 1;
+        }
+    }
+    Ok(in_use)
+}
+
+#[test]
+fn test_udp_sock_raw() {
+    let content = r#" sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops            
+382: 00000000:EB90 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 90696615 2 ffff9679c4dc9b00 0      
+1038: 0100007F:4E20 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 90595453 2 ffff967942300480 0      
+1571: 3500007F:0035 00000000:0000 07 00000000:00000000 00:00000000 00000000   101        0 22068 2 ffff967b626e3180 0         
+2104: 00000000:E24A 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 92612858 2 ffff967a6c186300 0      
+3326: 0100007F:2710 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 381284 2 ffff967b69441b00 0        
+4092: 00000000:CA0E 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 95211316 2 ffff9679858b1680 0"#;
+    let res = udp_sock_from_raw(content).unwrap();
+    assert_eq!(res, 6);
+}
+
+fn proc_sockstat_from_raw() -> io::Result<ProcNetSockStat> {
+    let tcp_content = read_file("/proc/net/tcp")?;
+    let tcp_stat = tcp_sock_from_raw(&tcp_content)?;
+    let mut retval: ProcNetSockStat = tcp_stat.into();
+
+    let udp_content = read_file("/proc/net/udp")?;
+    let udp_in_use = udp_sock_from_raw(&udp_content)?;
+    retval.udp_in_use = udp_in_use;
+
+    Ok(retval)
+}
+
+#[test]
+#[ignore]
+fn test_proc_raw() {
+    let res = proc_sockstat_from_raw().unwrap();
+    let sockstats = read_file("/proc/net/sockstat")
+        .and_then(|data| {
+            proc_net_sockstat(&data).map(|(_, res)| res).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+            })
+        })
+        .unwrap();
+
+    assert_eq!(res.tcp_in_use, sockstats.tcp_in_use);
+    assert_eq!(res.tcp_orphaned, sockstats.tcp_orphaned);
+    assert_eq!(res.tcp_time_wait, sockstats.tcp_time_wait);
+    assert_eq!(res.udp_in_use, sockstats.udp_in_use);
+}
+
+fn proc_sockstat6_from_raw() -> io::Result<ProcNetSockStat6> {
+    let tcp_content = read_file("/proc/net/tcp6")?;
+    let tcp_in_use = tcp_content.lines().skip(1).count();
+
+    let udp_content = read_file("/proc/net/udp6")?;
+    let udp_in_use = udp_content.lines().skip(1).count();
+
+    Ok(ProcNetSockStat6 {
+        tcp_in_use,
+        udp_in_use,
+    })
+}
+
+#[test]
+#[ignore]
+fn test_proc_sockstat6_raw() {
+    let res = proc_sockstat6_from_raw().unwrap();
+    let sockstats6 = read_file("/proc/net/sockstat6")
+        .and_then(|data| {
+            proc_net_sockstat6(&data).map(|(_, res)| res).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+            })
+        })
+        .unwrap();
+    assert_eq!(res.tcp_in_use, sockstats6.tcp_in_use);
+    assert_eq!(res.udp_in_use, sockstats6.udp_in_use);
 }
 
 impl Measurement for MeasurementImpl {
@@ -609,11 +797,9 @@ impl Measurement for MeasurementImpl {
         PlatformMemory::new().map(PlatformMemory::to_memory)
     }
 
-    fn memory_by_pid(
-        &self,
-        pid: u32,
-    ) -> std::io::Result<(u64, u64, ProcessStatus)> {
-        proc_memory(pid)
+    fn memory_by_pid(&self, pid: u32) -> std::io::Result<(u64, u64)> {
+        let status = proc_status(pid)?;
+        Ok((status.vm_rss, status.vm_size))
     }
 
     fn swap(&self) -> std::io::Result<SystemSwap> {
@@ -688,20 +874,13 @@ impl Measurement for MeasurementImpl {
     }
 
     fn socket_stats(&self) -> io::Result<SocketStats> {
-        let sockstats = read_file("/proc/net/sockstat").and_then(|data| {
-            proc_net_sockstat(&data).map(|(_, res)| res).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
-            })
-        })?;
-        let sockstats6 = read_file("/proc/net/sockstat6").and_then(|data| {
-            proc_net_sockstat6(&data).map(|(_, res)| res).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, e.to_string())
-            })
-        })?;
+        let sockstats = proc_sockstat_from_raw()?;
+        let sockstats6 = proc_sockstat6_from_raw()?;
 
         Ok(SocketStats {
             tcp_sockets_in_use: sockstats.tcp_in_use,
             tcp_sockets_orphan: sockstats.tcp_orphaned,
+            tcp_sockets_time_wait: sockstats.tcp_time_wait,
             udp_sockets_in_use: sockstats.udp_in_use,
             tcp6_sockets_in_use: sockstats6.tcp_in_use,
             udp6_sockets_in_use: sockstats6.udp_in_use,
@@ -792,8 +971,8 @@ impl Measurement for MeasurementImpl {
         Ok(pids)
     }
 
-    fn process_status(&self, _pid: u32) -> io::Result<ProcessInfo> {
-        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    fn process_status(&self, pid: u32) -> io::Result<ProcessInfo> {
+        proc_status(pid)
     }
 }
 

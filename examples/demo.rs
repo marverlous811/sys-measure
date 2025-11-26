@@ -16,10 +16,14 @@ fn fetch_process_info(
     let pid_cpu_usages = pid_usage.done()?;
     log::info!("pid {pid} has {pid_cpu_usages}%");
 
-    let (vm_size, vm_rss, _) = measurement.memory_by_pid(pid)?;
+    let status = measurement.process_status(pid)?;
 
-    log::info!("Virtual Memory: {} KB", vm_size);
-    log::info!("Resident Set Size (RSS): {} KB", vm_rss);
+    log::info!("Virtual Memory: {} KB", status.vm_size);
+    log::info!("Resident Set Size (RSS): {} KB", status.vm_rss);
+    log::info!("Process Status: {}", status.state);
+    log::info!("RSS Anon: {} KB", status.rss_anon);
+    log::info!("RSS File: {} KB", status.rss_file);
+    log::info!("RSS Shmem: {} KB", status.rss_shmem);
     log::info!("-----------------------------------");
     Ok(())
 }
@@ -52,7 +56,7 @@ fn fetch_exec_info(
         };
 
         match measurement.memory_by_pid(pid as u32) {
-            Ok((vm_size, vm_rss, _)) => {
+            Ok((vm_size, vm_rss)) => {
                 process_vm_size += vm_size;
                 process_vm_rss += vm_rss;
             }

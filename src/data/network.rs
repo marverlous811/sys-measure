@@ -32,11 +32,44 @@ pub struct NetworkStats {
     pub tx_errors: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct SocketStats {
     pub tcp_sockets_in_use: usize,
     pub tcp_sockets_orphan: usize,
+    pub tcp_sockets_time_wait: usize,
     pub udp_sockets_in_use: usize,
     pub tcp6_sockets_in_use: usize,
     pub udp6_sockets_in_use: usize,
+}
+
+impl SocketStats {
+    pub fn with_tcp_in_use(mut self, tcp_in_use: usize) -> Self {
+        self.tcp_sockets_in_use = tcp_in_use;
+        self
+    }
+
+    pub fn with_udp_in_use(mut self, udp_in_use: usize) -> Self {
+        self.udp_sockets_in_use = udp_in_use;
+        self
+    }
+
+    pub fn with_tcp6_in_use(mut self, tcp6_in_use: usize) -> Self {
+        self.tcp6_sockets_in_use = tcp6_in_use;
+        self
+    }
+
+    pub fn with_udp6_in_use(mut self, udp6_in_use: usize) -> Self {
+        self.udp6_sockets_in_use = udp6_in_use;
+        self
+    }
+
+    pub fn with_tcp_orphan(mut self, tcp_orphan: usize) -> Self {
+        self.tcp_sockets_orphan = tcp_orphan;
+        self
+    }
+
+    pub fn with_tcp_time_wait(mut self, tcp_time_wait: usize) -> Self {
+        self.tcp_sockets_time_wait = tcp_time_wait;
+        self
+    }
 }
