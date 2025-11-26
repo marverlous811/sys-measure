@@ -38,3 +38,12 @@ impl fmt::Display for ProcessStatus {
         })
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct ProcessInfo {
+    pub state: ProcessStatus,
+    pub vm_rss: u64,
+    pub rss_anon: u64,
+    pub rss_file: u64,
+    pub rss_shmem: u64,
+}

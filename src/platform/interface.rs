@@ -2,7 +2,7 @@ use crate::{
     data::*,
     disk::FileSystem,
     network::{Network, NetworkStats, SocketStats},
-    process::ProcessStatus,
+    process::{ProcessInfo, ProcessStatus},
 };
 use std::{collections::BTreeMap, io, path, time::Duration};
 use time::OffsetDateTime;
@@ -63,4 +63,5 @@ pub trait Measurement {
     fn boot_time(&self) -> io::Result<OffsetDateTime>;
     fn process_uptime(&self, pid: u32) -> io::Result<Duration>;
     fn process_pid(&self, cmd: &str) -> io::Result<Vec<usize>>;
+    fn process_status(&self, pid: u32) -> io::Result<ProcessInfo>;
 }

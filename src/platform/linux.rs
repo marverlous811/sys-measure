@@ -21,7 +21,7 @@ use crate::{
     helper::read_file,
     network::{Network, NetworkStats, SocketStats},
     platform::unix,
-    process::ProcessStatus,
+    process::{ProcessInfo, ProcessStatus},
     saturating_sub_bytes, DelayedMeasurement, Measurement, PlatformMemory,
     SystemCpuLoad, SystemCpuTime, SystemMemory, SystemSwap,
 };
@@ -790,6 +790,10 @@ impl Measurement for MeasurementImpl {
         }
 
         Ok(pids)
+    }
+
+    fn process_status(&self, _pid: u32) -> io::Result<ProcessInfo> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }
 

@@ -14,6 +14,7 @@ use crate::{
     disk::FileSystem,
     network::{Network, NetworkStats, SocketStats},
     platform::unix,
+    process::ProcessInfo,
     PlatformMemory, PlatformSwap, SystemMemory, SystemSwap,
 };
 
@@ -213,6 +214,10 @@ impl Measurement for MeasurementImpl {
     }
 
     fn process_pid(&self, _cmd: &str) -> io::Result<Vec<usize>> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn process_status(&self, _pid: u32) -> io::Result<ProcessInfo> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }
