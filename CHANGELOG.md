@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/marverlous811/sys-measure/compare/v0.1.1...v0.2.0) - 2025-11-26
+
+### Added
+
+- add more memory info in linux process
+- add process info
+
+### Other
+
+- change status string
+
 ## [0.1.1](https://github.com/marverlous811/sys-measure/compare/v0.1.0...v0.1.1) - 2025-11-20
 
 ### Added
