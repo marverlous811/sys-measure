@@ -63,5 +63,5 @@ pub trait Measurement {
     fn process_pid(&self, cmd: &str) -> io::Result<Vec<usize>>;
     fn process_status(&self, pid: u32) -> io::Result<ProcessInfo>;
 
-    fn temperature_with_type(&self) -> io::Result<BTreeMap<String, f32>>;
+    fn temperature_with_type(&self) -> io::Result<Vec<(String, f32)>>;
 }

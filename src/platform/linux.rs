@@ -988,8 +988,8 @@ impl Measurement for MeasurementImpl {
         proc_status(pid)
     }
 
-    fn temperature_with_type(&self) -> io::Result<BTreeMap<String, f32>> {
-        let mut temps = BTreeMap::new();
+    fn temperature_with_type(&self) -> io::Result<Vec<(String, f32)>> {
+        let mut temps = vec![];
         // list all thermal zones in /sys/class/thermal
         // /sys/class/thermal/thermal_zoneX/temp is temperature in millidegree Celsius
         // /sys/class/thermal/thermal_zoneX/type contains the type of the thermal zone
@@ -1003,10 +1003,10 @@ impl Measurement for MeasurementImpl {
                         read_file(type_path.to_str().unwrap()),
                     ) {
                         if let Ok(temp) = temp_data.trim().parse::<f32>() {
-                            temps.insert(
+                            temps.push((
                                 type_data.trim().to_string(),
                                 temp / 1000.0,
-                            );
+                            ));
                         }
                     }
                 }

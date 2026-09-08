@@ -51,5 +51,10 @@ fn main() {
     let pid = measuare.process_pid("relay-agent").unwrap();
     println!("Process pid for relay_agent: {:?}\n", pid);
 
+    let temp = measuare.temperature_with_type().unwrap();
+    for (sensor, temperature) in temp {
+        println!("Sensor: {}, Temperature: {}", sensor, temperature);
+    }
+
     println!("Elapsed: {:?}\n", start.elapsed());
 }
