@@ -222,7 +222,7 @@ impl Measurement for MeasurementImpl {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 
-    fn temperature_with_type(&self) -> io::Result<BTreeMap<String, f32>> {
+    fn temperature_with_type(&self) -> io::Result<Vec<(String, f32)>> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }
