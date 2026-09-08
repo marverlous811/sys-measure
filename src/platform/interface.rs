@@ -34,6 +34,7 @@ pub trait Measurement {
         &self,
         pid: u32,
     ) -> std::io::Result<DelayedMeasurement<f64>>;
+    fn cpu_temp(&self) -> io::Result<f32>;
 
     fn memory(&self) -> std::io::Result<SystemMemory>;
     fn memory_by_pid(&self, pid: u32) -> std::io::Result<(u64, u64)>;
@@ -61,4 +62,6 @@ pub trait Measurement {
     fn process_uptime(&self, pid: u32) -> io::Result<Duration>;
     fn process_pid(&self, cmd: &str) -> io::Result<Vec<usize>>;
     fn process_status(&self, pid: u32) -> io::Result<ProcessInfo>;
+
+    fn temperature_with_type(&self) -> io::Result<BTreeMap<String, f32>>;
 }

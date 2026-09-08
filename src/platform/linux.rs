@@ -793,6 +793,19 @@ impl Measurement for MeasurementImpl {
         })
     }
 
+    fn cpu_temp(&self) -> io::Result<f32> {
+        read_file("/sys/class/thermal/thermal_zone0/temp")
+            .or(read_file("/sys/class/hwmon/hwmon0/temp1_input"))
+            .and_then(|data| match data.trim().parse::<f32>() {
+                Ok(x) => Ok(x),
+                Err(_) => Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Could not parse float",
+                )),
+            })
+            .map(|num| num / 1000.0)
+    }
+
     fn memory(&self) -> std::io::Result<SystemMemory> {
         PlatformMemory::new().map(PlatformMemory::to_memory)
     }
@@ -973,6 +986,33 @@ impl Measurement for MeasurementImpl {
 
     fn process_status(&self, pid: u32) -> io::Result<ProcessInfo> {
         proc_status(pid)
+    }
+
+    fn temperature_with_type(&self) -> io::Result<BTreeMap<String, f32>> {
+        let mut temps = BTreeMap::new();
+        // list all thermal zones in /sys/class/thermal
+        // /sys/class/thermal/thermal_zoneX/temp is temperature in millidegree Celsius
+        // /sys/class/thermal/thermal_zoneX/type contains the type of the thermal zone
+        if let Ok(entries) = std::fs::read_dir("/sys/class/thermal") {
+            for entry in entries.flatten() {
+                let temp_path = entry.path().join("temp");
+                let type_path = entry.path().join("type");
+                if temp_path.exists() && type_path.exists() {
+                    if let (Ok(temp_data), Ok(type_data)) = (
+                        read_file(temp_path.to_str().unwrap()),
+                        read_file(type_path.to_str().unwrap()),
+                    ) {
+                        if let Ok(temp) = temp_data.trim().parse::<f32>() {
+                            temps.insert(
+                                type_data.trim().to_string(),
+                                temp / 1000.0,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(temps)
     }
 }
 

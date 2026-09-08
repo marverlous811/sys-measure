@@ -4,8 +4,8 @@ use bytesize::ByteSize;
 use libc::{
     c_int, host_processor_info, host_statistics64, mach_host_self,
     mach_msg_type_number_t, natural_t, processor_cpu_load_info_data_t, sysconf,
-    vm_statistics64, HOST_VM_INFO64, KERN_SUCCESS, PROCESSOR_CPU_LOAD_INFO,
-    _SC_PHYS_PAGES,
+    vm_statistics64, _SC_PHYS_PAGES, HOST_VM_INFO64, KERN_SUCCESS,
+    PROCESSOR_CPU_LOAD_INFO,
 };
 use mach2::traps::mach_task_self;
 
@@ -215,6 +215,14 @@ impl Measurement for MeasurementImpl {
     }
 
     fn process_status(&self, _pid: u32) -> io::Result<ProcessInfo> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn cpu_temp(&self) -> io::Result<f32> {
+        Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
+    }
+
+    fn temperature_with_type(&self) -> io::Result<BTreeMap<String, f32>> {
         Err(io::Error::new(io::ErrorKind::Other, "Not supported"))
     }
 }
