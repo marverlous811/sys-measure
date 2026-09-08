@@ -39,6 +39,77 @@ impl fmt::Display for ProcessStatus {
     }
 }
 
+impl Into<u64> for ProcessStatus {
+    fn into(self) -> u64 {
+        match self {
+            ProcessStatus::Idle => (0 << 32) | 0,
+            ProcessStatus::Run => (1 << 32) | 0,
+            ProcessStatus::Sleep => (2 << 32) | 0,
+            ProcessStatus::Stop => (3 << 32) | 0,
+            ProcessStatus::Zombie => (4 << 32) | 0,
+            ProcessStatus::Tracing => (5 << 32) | 0,
+            ProcessStatus::Dead => (6 << 32) | 0,
+            ProcessStatus::Wakekill => (7 << 32) | 0,
+            ProcessStatus::Waking => (8 << 32) | 0,
+            ProcessStatus::Parked => (9 << 32) | 0,
+            ProcessStatus::LockBlocked => (10 << 32) | 0,
+            ProcessStatus::UninterruptibleDiskSleep => (11 << 32) | 0,
+            ProcessStatus::Suspended => (12 << 32) | 0,
+            ProcessStatus::Unknown(code) => (13 << 32) | code as u64,
+        }
+    }
+}
+
+impl From<u64> for ProcessStatus {
+    fn from(value: u64) -> Self {
+        let high = (value >> 32) as u32;
+        let low = (value & 0xFFFF_FFFF) as u32;
+        match high {
+            0 => ProcessStatus::Idle,
+            1 => ProcessStatus::Run,
+            2 => ProcessStatus::Sleep,
+            3 => ProcessStatus::Stop,
+            4 => ProcessStatus::Zombie,
+            5 => ProcessStatus::Tracing,
+            6 => ProcessStatus::Dead,
+            7 => ProcessStatus::Wakekill,
+            8 => ProcessStatus::Waking,
+            9 => ProcessStatus::Parked,
+            10 => ProcessStatus::LockBlocked,
+            11 => ProcessStatus::UninterruptibleDiskSleep,
+            12 => ProcessStatus::Suspended,
+            _ => ProcessStatus::Unknown(low),
+        }
+    }
+}
+
+#[test]
+fn test_process_status() {
+    let statuses = [
+        ProcessStatus::Idle,
+        ProcessStatus::Run,
+        ProcessStatus::Sleep,
+        ProcessStatus::Stop,
+        ProcessStatus::Zombie,
+        ProcessStatus::Tracing,
+        ProcessStatus::Dead,
+        ProcessStatus::Wakekill,
+        ProcessStatus::Waking,
+        ProcessStatus::Parked,
+        ProcessStatus::LockBlocked,
+        ProcessStatus::UninterruptibleDiskSleep,
+        ProcessStatus::Suspended,
+        ProcessStatus::Unknown(42),
+    ];
+
+    for status in &statuses {
+        let encoded: u64 = (*status).into();
+        // println!("Encoded {:?} into {}", status, encoded);
+        let decoded: ProcessStatus = encoded.into();
+        assert_eq!(*status, decoded);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub state: ProcessStatus,
